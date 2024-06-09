@@ -13,7 +13,6 @@ void mousedw(int x, int y, int but);
 void draw_block(float x, float y, float z);
 void list_hits(GLint hits, GLuint *names);
 
-int selectmode = 0;
 void gl_draw()
 {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -21,18 +20,14 @@ void gl_draw()
     glLoadIdentity();
     glTranslatef(0.0, 0.0, -5.0);
     glColor3f(1.0, 0.0, 0.0);
-    if (selectmode) printf("load name 7\n");
     glLoadName(7); /* Overwrite the first name in the buffer */
     draw_block(-0.3, 0, -2);
     glColor3f(0.0, 1.0, 0.0);
-    if (selectmode) printf("load name 14\n");
     glLoadName(14); /* Overwrite the first name in the buffer */
     draw_block(0, 0, -4);
     glColor3f(0.0, 0.0, 1.0);
-    if (selectmode) printf("load name 21\n");
     glLoadName(21); /* Overwrite the first name in the buffer */
     draw_block(0.3, 0, -6);
-    if (selectmode) printf("swap buffers\n");
     glutSwapBuffers();
 }
 void gl_init(int w, int h)
@@ -72,13 +67,11 @@ void gl_select(int x, int y)
        Switching in selecton mode
        */
     glRenderMode(GL_SELECT);
-    selectmode = 1;
     /*
        Clearing the name's stack
        This stack contains all the info about the objects
        */
     glInitNames();
-    printf("Push name 0\n");
     /*
        Now fill the stack with one element (or glLoadName will generate an error)
        */
@@ -101,7 +94,6 @@ void gl_select(int x, int y)
     /*
        draw only the names in the stack, and fill the array
        */
-    printf("Swap buffers\n");
     glutSwapBuffers();
     gl_draw();
     /*
@@ -114,7 +106,6 @@ void gl_select(int x, int y)
        and return to render mode
        */
     hits = glRenderMode(GL_RENDER);
-    selectmode = 0;
     /*
        Print a list of the objects
        */
