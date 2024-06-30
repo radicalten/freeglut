@@ -218,7 +218,7 @@
 #include "blackberry/fg_internal_blackberry.h"
 #endif
 #if TARGET_HOST_OGC
-#include "ogc/fg_internal_ogc.h"
+#include "fg_internal_ogc.h"
 #endif
 
 
