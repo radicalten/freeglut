@@ -23,7 +23,7 @@
 #define FREEGLUT_COMMON_OGC_H
 
 #include <GL/freeglut.h>
-#include "../fg_internal.h"
+#include "fg_internal.h"
 
 #define MAX_GC_JOYSTICKS 4
 
