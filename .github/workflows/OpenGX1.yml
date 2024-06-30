@@ -23,9 +23,9 @@ jobs:
         cd .
         git clone https://github.com/freeglut/freeglut.git
         cd freeglut
-        cmake -S. -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/Wii.cmake" -DFREEGLUT_BUILD_DEMOS=OFF ..
-        cd build
-        sudo -E PATH=$PATH make install
+        mkdir build && cd build
+        cmake -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/Wii.cmake" -DFREEGLUT_BUILD_DEMOS=OFF ..
+        make && sudo make install
     - name: Compile
       run: |
         cd .
