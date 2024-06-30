@@ -2,7 +2,7 @@ name: OpenGX SDL2 FreeGLUT
 on:
   push:
     branches:
-    - master
+    - with-tutorials
 jobs:
   build-wii:
     runs-on: ubuntu-latest
