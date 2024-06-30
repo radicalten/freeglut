@@ -1,4 +1,4 @@
-name: FreeGLUT Method 1
+name: FreeGLUT Method 2
 on:
   push:
     branches:
