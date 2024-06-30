@@ -1,5 +1,5 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.1 FATAL_ERROR)
-PROJECT(freeglut LANGUAGES C)
+PROJECT(freeglut LANGUAGES C CXX)
 
 if (POLICY CMP0072)
     # This policy sets libOpenGL.so (GLVND) as the default GL library to link
@@ -79,6 +79,11 @@ IF(NOT WIN32)
     OPTION(FREEGLUT_WAYLAND "Use Wayland (no X11)" OFF)
 ENDIF()
 
+IF(CMAKE_SYSTEM_NAME MATCHES "NintendoWii|NintendoGameCube")
+    SET(OGC ON)
+ELSE()
+    SET(OGC OFF)
+ENDIF()
 
 SET(FREEGLUT_HEADERS
     include/GL/freeglut.h
@@ -122,7 +127,7 @@ SET(FREEGLUT_SRCS
     src/fg_window.c
 )
 # TODO: OpenGL ES requires a compatible version of these files:
-IF(NOT FREEGLUT_GLES)
+IF(NOT FREEGLUT_GLES AND NOT OGC)
     LIST(APPEND FREEGLUT_SRCS
         src/fg_font.c
         src/fg_menu.c
@@ -197,6 +202,28 @@ ELSEIF(ANDROID OR BLACKBERRY)
         )
     ENDIF()
 
+ELSEIF(OGC)
+
+    LIST(APPEND FREEGLUT_SRCS
+        src/ogc/fg_common_ogc.h
+        src/ogc/fg_cursor_ogc.c
+        src/ogc/fg_display_ogc.c
+        src/ogc/fg_ext_ogc.c
+        src/ogc/fg_gamemode_ogc.c
+        src/ogc/fg_init_ogc.c
+        src/ogc/fg_internal_ogc.h
+        src/ogc/fg_input_devices_ogc.c
+        src/ogc/fg_joystick_ogc.c
+        src/ogc/fg_main_ogc.c
+        src/ogc/fg_state_ogc.c
+        src/ogc/fg_structure_ogc.c
+        src/ogc/fg_window_ogc.c
+    )
+    LIST(APPEND LIBS wiikeyboard fat)
+    SET(FREEGLUT_BUILD_SHARED_LIBS OFF)
+    # Only used in fg_window.c, to declare support for double buffering
+    ADD_DEFINITIONS(-DEGL_VERSION_1_0)
+
 ELSE()
     # UNIX (Wayland)
     IF(FREEGLUT_WAYLAND)
@@ -267,7 +294,7 @@ IF(FREEGLUT_GLES OR FREEGLUT_WAYLAND)
 ENDIF()
 
 INCLUDE(CheckIncludeFiles)
-IF(UNIX AND NOT(ANDROID OR BLACKBERRY OR FREEGLUT_WAYLAND))
+IF(UNIX AND NOT(ANDROID OR BLACKBERRY OR FREEGLUT_WAYLAND OR OGC))
     FIND_PACKAGE(X11 REQUIRED)
     INCLUDE_DIRECTORIES(${X11_X11_INCLUDE_PATH})
     LIST(APPEND LIBS ${X11_X11_LIB})
@@ -673,6 +700,50 @@ ADD_DEMO(keyboard        progs/demos/keyboard/keyboard.c)
 ADD_DEMO(indexed_color   progs/demos/indexed_color/idxcol.c)
 ADD_DEMO(3dview          progs/demos/3dview/3dview.c)
 
+MACRO(ADD_SAMPLE name)
+    IF(FREEGLUT_BUILD_SHARED_LIBS)
+        ADD_EXECUTABLE(${name} ${ARGN})
+        TARGET_LINK_LIBRARIES(${name} ${DEMO_LIBS} freeglut)
+        IF(WIN32 AND MSVC)
+            SET_TARGET_PROPERTIES(${name} PROPERTIES DEBUG_POSTFIX d)
+        ENDIF()
+    ENDIF()
+    IF(FREEGLUT_BUILD_STATIC_LIBS)
+        ADD_EXECUTABLE(${name}_static ${ARGN})
+        TARGET_LINK_LIBRARIES(${name}_static ${DEMO_LIBS} freeglut_static)
+        SET_TARGET_PROPERTIES(${name}_static PROPERTIES LINKER_LANGUAGE CXX)
+        IF(WIN32 AND MSVC)
+            SET_TARGET_PROPERTIES(${name}_static PROPERTIES DEBUG_POSTFIX d)
+        ENDIF()
+    ENDIF()
+    IF(CMAKE_SYSTEM_NAME MATCHES "NintendoWii|NintendoGameCube")
+        ogc_create_dol(${name}_static)
+    ENDIF()
+ENDMACRO()
+
+ADD_SAMPLE(swift01 tutorials/swiftless01.c)
+ADD_SAMPLE(swift02 tutorials/swiftless02.c)
+ADD_SAMPLE(swift04 tutorials/swiftless04.cpp)
+ADD_SAMPLE(swift05 tutorials/swiftless05.cpp)
+ADD_SAMPLE(swift06 tutorials/swiftless06.cpp)
+ADD_SAMPLE(swift07 tutorials/swiftless07.cpp)
+ADD_SAMPLE(swift08 tutorials/swiftless08.cpp)
+ADD_SAMPLE(swift09 tutorials/swiftless09.cpp)
+ADD_SAMPLE(swift10 tutorials/swiftless10.cpp)
+ADD_SAMPLE(swift11 tutorials/swiftless11.cpp)
+ADD_SAMPLE(swift12 tutorials/swiftless12.cpp)
+ADD_SAMPLE(swift13 tutorials/swiftless13.cpp)
+ADD_SAMPLE(swift14 tutorials/swiftless14.cpp)
+ADD_SAMPLE(swift16 tutorials/swiftless16.cpp)
+ADD_SAMPLE(swift17 tutorials/swiftless17.cpp)
+ADD_SAMPLE(swift21 tutorials/swiftless21.cpp)
+ADD_SAMPLE(swift27 tutorials/swiftless27.cpp)
+
+ADD_SAMPLE(call-lists tutorials/call-lists.cpp)
+
+ADD_SAMPLE(boids tutorials/rosetta-boids.c)
+ADD_SAMPLE(textures tutorials/textures.cpp)
+ADD_SAMPLE(picking tutorials/picking.c)
 
 
 # pkg-config support, to install at $(libdir)/pkgconfig
@@ -696,6 +767,8 @@ ELSEIF(FREEGLUT_GLES)
 ELSE()
   IF(FREEGLUT_WAYLAND)
     SET(PC_LIBS_PRIVATE "-lwayland-client -lwayland-cursor -lwayland-egl -lGL -lxkbcommon -lm")
+  ELSEIF(OGC)
+    SET(PC_LIBS_PRIVATE "-lm")
   ELSE()
     SET(PC_LIBS_PRIVATE "-lX11 -lXxf86vm -lXrandr -lGL -lm")
   ENDIF()
