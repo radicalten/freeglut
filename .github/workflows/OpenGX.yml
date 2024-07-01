@@ -1,4 +1,4 @@
-name: FreeGLUT Method 1
+name: OpenGX and FreeGLUT
 on:
   push:
     branches:
