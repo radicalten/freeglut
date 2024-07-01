@@ -72,6 +72,7 @@ OGGFILES	:=	$(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.ogg)))
 PCMFILES	:=	$(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.pcm)))
 BMPFILES	:=	$(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.bmp)))
 RAWFILES	:=	$(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.raw)))
+SCFFILES	:=	$(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.scf)))
 TPLFILES	:=	$(SCFFILES:.scf=.tpl)
 
 #---------------------------------------------------------------------------------
