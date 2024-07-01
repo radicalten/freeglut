@@ -37,7 +37,7 @@ LDFLAGS	=	-g $(MACHDEP) -Wl,-Map,$(notdir $@).map
 #---------------------------------------------------------------------------------
 # LIBS	:= -lwiiuse -lbte -logc -lm
 
-LIBS	:= -lopengx -lfat -logc -lwiiuse -lm -lbte -lGL -lGLU
+LIBS	:= -lopengx -lfat -logc -lwiiuse -lm -lbte -lGLU
 
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level containing
