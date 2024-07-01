@@ -1,7 +1,15 @@
-#include <stdio.h>
-#include <stdlib.h>
 #include <gccore.h>
 #include <wiiuse/wpad.h>
+
+#include <fat.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <dirent.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 static void *xfb = NULL;
 static GXRModeObj *rmode = NULL;
@@ -25,7 +33,6 @@ int main(int argc, char **argv) {
 
 	// Initialise the console, required for printf
 	console_init(xfb,20,20,rmode->fbWidth,rmode->xfbHeight,rmode->fbWidth*VI_DISPLAY_PIX_SZ);
-	//SYS_STDIO_Report(true);
 
 	// Set up the video registers with the chosen mode
 	VIDEO_Configure(rmode);
@@ -34,7 +41,7 @@ int main(int argc, char **argv) {
 	VIDEO_SetNextFramebuffer(xfb);
 
 	// Make the display visible
-	VIDEO_SetBlack(false);
+	VIDEO_SetBlack(true);
 
 	// Flush the video register changes to the hardware
 	VIDEO_Flush();
@@ -50,9 +57,34 @@ int main(int argc, char **argv) {
 	// e.g. printf ("\x1b[%d;%dH", row, column );
 	printf("\x1b[2;0H");
 
+	if (!fatInitDefault()) {
+		printf("fatInitDefault failure: terminating\n");
+		goto error;
+	}
 
-	printf("Hello World!\n");
+	DIR *pdir;
+	struct dirent *pent;
+	struct stat statbuf;
 
+	pdir=opendir(".");
+
+	if (!pdir){
+		printf ("opendir() failure; terminating\n");
+		goto error;
+	}
+
+	while ((pent=readdir(pdir))!=NULL) {
+		stat(pent->d_name,&statbuf);
+		if(strcmp(".", pent->d_name) == 0 || strcmp("..", pent->d_name) == 0)
+			continue;
+		if(S_ISDIR(statbuf.st_mode))
+			printf("%s <dir>\n", pent->d_name);
+		if(!(S_ISDIR(statbuf.st_mode)))
+			printf("%s %lld\n", pent->d_name, statbuf.st_size);
+	}
+	closedir(pdir);
+
+error:
 	while(1) {
 
 		// Call WPAD_ScanPads each loop, this reads the latest controller states
