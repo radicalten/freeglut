@@ -1,6 +1,6 @@
 /*---------------------------------------------------------------------------------
 
-	nehe lesson 1 port to GX by WinterMute
+	nehe lesson 2 port to GX by WinterMute
 
 ---------------------------------------------------------------------------------*/
 
@@ -24,8 +24,9 @@ int main( int argc, char **argv ){
 
 	u32 xfbHeight;
 
-	Mtx	view;
+	Mtx view;
 	Mtx44 perspective;
+	Mtx model, modelview;
 
 	u32	fb = 0; 	// initial framebuffer index
 	GXColor background = {0, 0, 0, 0xff};
@@ -72,11 +73,35 @@ int main( int argc, char **argv ){
 	GX_CopyDisp(frameBuffer[fb],GX_TRUE);
 	GX_SetDispCopyGamma(GX_GM_1_0);
 
+
+	// setup the vertex descriptor
+	// tells the flipper to expect direct data
+	GX_ClearVtxDesc();
+	GX_SetVtxDesc(GX_VA_POS, GX_DIRECT);
+
+	// setup the vertex attribute table
+	// describes the data
+	// args: vat location 0-7, type of data, data format, size, scale
+	// so for ex. in the first call we are sending position data with
+	// 3 values X,Y,Z of size F32. scale sets the number of fractional
+	// bits for non float data.
+	GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
+
+	GX_SetNumChans(1);
+	GX_SetNumTexGens(0);
+	GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
+	GX_SetTevColor(GX_TEVREG1, (GXColor){ 0xFF, 0xFF, 0xFF, 0 });
+	GX_SetTevColorIn(GX_TEVSTAGE0, GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_C1);
+	GX_SetTevColorOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+	GX_SetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_A1);
+	GX_SetTevAlphaOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+
 	// setup our camera at the origin
 	// looking down the -z axis with y up
 	guVector cam = {0.0F, 0.0F, 0.0F},
 			up = {0.0F, 1.0F, 0.0F},
-		  look = {0.0F, 0.0F, -1.0F};
+			look = {0.0F, 0.0F, -1.0F};
+
 	guLookAt(view, &cam, &up, &look);
 
 
@@ -97,6 +122,29 @@ int main( int argc, char **argv ){
 		// do this before drawing
 		GX_SetViewport(0,0,rmode->fbWidth,rmode->efbHeight,0,1);
 
+		guMtxIdentity(model);
+		guMtxTransApply(model, model, -1.5f,0.0f,-6.0f);
+		guMtxConcat(view,model,modelview);
+		// load the modelview matrix into matrix memory
+		GX_LoadPosMtxImm(modelview, GX_PNMTX0);
+
+		GX_Begin(GX_TRIANGLES, GX_VTXFMT0, 3);
+			GX_Position3f32( 0.0f, 1.0f, 0.0f);		// Top
+			GX_Position3f32(-1.0f,-1.0f, 0.0f);	// Bottom Left
+			GX_Position3f32( 1.0f,-1.0f, 0.0f);	// Bottom Right
+		GX_End();
+
+		guMtxTransApply(model, model, 3.0f,0.0f,0.0f);
+		guMtxConcat(view,model,modelview);
+		// load the modelview matrix into matrix memory
+		GX_LoadPosMtxImm(modelview, GX_PNMTX0);
+
+		GX_Begin(GX_QUADS, GX_VTXFMT0, 4);			// Draw A Quad
+			GX_Position3f32(-1.0f, 1.0f, 0.0f);	// Top Left
+			GX_Position3f32( 1.0f, 1.0f, 0.0f);		// Top Right
+			GX_Position3f32( 1.0f,-1.0f, 0.0f);	// Bottom Right
+			GX_Position3f32(-1.0f,-1.0f, 0.0f);	// Bottom Left
+		GX_End();									// Done Drawing The Quad
 
 		// do this stuff after drawing
 		GX_DrawDone();
