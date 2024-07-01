@@ -1,6 +1,6 @@
 /*---------------------------------------------------------------------------------
 
-	nehe lesson 3 port to GX by WinterMute
+	nehe lesson 4 port to GX by WinterMute
 
 ---------------------------------------------------------------------------------*/
 
@@ -27,6 +27,8 @@ int main( int argc, char **argv ){
 	Mtx view;
 	Mtx44 perspective;
 	Mtx model, modelview;
+
+	float rtri = 0.0f , rquad = 0.0f;
 
 	u32	fb = 0; 	// initial framebuffer index
 	GXColor background = {0, 0, 0, 0xff};
@@ -110,6 +112,9 @@ int main( int argc, char **argv ){
 	guPerspective(perspective, 45, (f32)w/h, 0.1F, 300.0F);
 	GX_LoadProjectionMtx(perspective, GX_PERSPECTIVE);
 
+	guVector Yaxis = {0,1,0};
+	guVector Xaxis = {1,0,0};
+
 	while(1) {
 
 		WPAD_ScanPads();
@@ -120,6 +125,7 @@ int main( int argc, char **argv ){
 		GX_SetViewport(0,0,rmode->fbWidth,rmode->efbHeight,0,1);
 
 		guMtxIdentity(model);
+		guMtxRotAxisDeg(model, &Yaxis, rtri);
 		guMtxTransApply(model, model, -1.5f,0.0f,-6.0f);
 		guMtxConcat(view,model,modelview);
 		// load the modelview matrix into matrix memory
@@ -134,7 +140,9 @@ int main( int argc, char **argv ){
 			GX_Color3f32(0.0f,0.0f,1.0f);			// Set The Color To Blue
 		GX_End();
 
-		guMtxTransApply(model, model, 3.0f,0.0f,0.0f);
+		guMtxIdentity(model);
+		guMtxRotAxisDeg(model, &Xaxis, rquad);
+		guMtxTransApply(model, model, 1.5f,0.0f,-6.0f);
 		guMtxConcat(view,model,modelview);
 		// load the modelview matrix into matrix memory
 		GX_LoadPosMtxImm(modelview, GX_PNMTX0);
@@ -164,6 +172,8 @@ int main( int argc, char **argv ){
 
 		VIDEO_WaitVSync();
 
+		rtri+=0.2f;				// Increase The Rotation Variable For The Triangle ( NEW )
+		rquad-=0.15f;			// Decrease The Rotation Variable For The Quad     ( NEW )
 
 	}
 	return 0;
