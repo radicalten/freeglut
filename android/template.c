@@ -1,251 +1,281 @@
-/*---------------------------------------------------------------------------------
-
-	nehe lesson 6 port to GX by shagkur
-
----------------------------------------------------------------------------------*/
-
+#include <malloc.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <malloc.h>
-#include <math.h>
 #include <gccore.h>
 #include <wiiuse/wpad.h>
 
-#include "NeHe_tpl.h"
-#include "NeHe.h"
+#define FIFO_SIZE (256*1024)
 
-#define DEFAULT_FIFO_SIZE	(256*1024)
+static void *xfb = NULL;
+static GXRModeObj *vmode;
+static sys_fontheader *fontdata;
+static GXTexObj fonttex;
+static int text_x;
+static int text_y;
+static int text_size;
+static u32 text_color = 0xffffffff;
 
-static GXRModeObj *rmode = NULL;
-static void *frameBuffer[2] = { NULL, NULL};
-
-
-int main(int argc,char **argv)
+static inline void set_text_pos(int x, int y)
 {
-	f32 yscale;
-	u32 xfbHeight;
-	u32 fb = 0;
-	f32 rquad = 0.0f;
-	u32 first_frame = 1;
-	GXTexObj texture;
-	Mtx view; // view and perspective matrices
-	Mtx model, modelview;
-	Mtx44 perspective;
-	void *gpfifo = NULL;
-	GXColor background = {0, 0, 0, 0xff};
-	guVector cam = {0.0F, 0.0F, 0.0F},
-			up = {0.0F, 1.0F, 0.0F},
-		  look = {0.0F, 0.0F, -1.0F};
+    text_x = x;
+    text_y = y;
+}
 
-	TPLFile neheTPL;
+static inline void set_text_size(int size)
+{
+    text_size = size;
+}
 
-	VIDEO_Init();
-	WPAD_Init();
+static inline void set_text_color(u32 color)
+{
+    text_color = color;
+}
 
-	rmode = VIDEO_GetPreferredMode(NULL);
+static void activate_font_texture()
+{
+    u32 texture_size;
+    void *texels;
 
-	// allocate the fifo buffer
-	gpfifo = memalign(32,DEFAULT_FIFO_SIZE);
-	memset(gpfifo,0,DEFAULT_FIFO_SIZE);
+    texels = (void *)fontdata + fontdata->sheet_image;
+    GX_InitTexObj(&fonttex, texels,
+                  fontdata->sheet_width, fontdata->sheet_height,
+                  fontdata->sheet_format, GX_CLAMP, GX_CLAMP, GX_FALSE);
+    GX_InitTexObjLOD(&fonttex, GX_LINEAR, GX_LINEAR, 0., 0., 0.,
+                     GX_TRUE, GX_TRUE, GX_ANISO_1);
+    GX_LoadTexObj(&fonttex, GX_TEXMAP0);
 
-	// allocate 2 framebuffers for double buffering
-	frameBuffer[0] = SYS_AllocateFramebuffer(rmode);
-	frameBuffer[1] = SYS_AllocateFramebuffer(rmode);
+    texture_size = GX_GetTexBufferSize(fontdata->sheet_width,
+                                       fontdata->sheet_height,
+                                       fontdata->sheet_format,
+                                       GX_FALSE, 0);
+    DCStoreRange(texels, texture_size);
+    GX_InvalidateTexAll();
+}
 
-	// configure video
-	VIDEO_Configure(rmode);
-	VIDEO_SetNextFramebuffer(frameBuffer[fb]);
-	VIDEO_Flush();
-	VIDEO_WaitVSync();
-	if(rmode->viTVMode&VI_NON_INTERLACE) VIDEO_WaitVSync();
+static void draw_font_cell(int16_t x1, int16_t y1, uint32_t c, int16_t s1, int16_t t1)
+{
+    int16_t x2 = x1 + fontdata->cell_width * text_size / fontdata->cell_height;
+    int16_t y2 = y1 - text_size;
 
-	fb ^= 1;
+    int16_t s2 = s1 + fontdata->cell_width;
+    int16_t t2 = t1 + fontdata->cell_height;
 
-	// init the flipper
-	GX_Init(gpfifo,DEFAULT_FIFO_SIZE);
+    GX_Begin(GX_QUADS, GX_VTXFMT0, 4);
 
-	// clears the bg to color and clears the z buffer
-	GX_SetCopyClear(background, 0x00ffffff);
+    GX_Position2s16(x1, y2);
+    GX_Color1u32(c);
+    GX_TexCoord2s16(s1, t1);
 
-	// other gx setup
-	GX_SetViewport(0,0,rmode->fbWidth,rmode->efbHeight,0,1);
-	yscale = GX_GetYScaleFactor(rmode->efbHeight,rmode->xfbHeight);
-	xfbHeight = GX_SetDispCopyYScale(yscale);
-	GX_SetScissor(0,0,rmode->fbWidth,rmode->efbHeight);
-	GX_SetDispCopySrc(0,0,rmode->fbWidth,rmode->efbHeight);
-	GX_SetDispCopyDst(rmode->fbWidth,xfbHeight);
-	GX_SetCopyFilter(rmode->aa,rmode->sample_pattern,GX_TRUE,rmode->vfilter);
-	GX_SetFieldMode(rmode->field_rendering,((rmode->viHeight==2*rmode->xfbHeight)?GX_ENABLE:GX_DISABLE));
+    GX_Position2s16(x2, y2);
+    GX_Color1u32(c);
+    GX_TexCoord2s16(s2, t1);
 
-	if (rmode->aa) {
-		GX_SetPixelFmt(GX_PF_RGB565_Z16, GX_ZC_LINEAR);
-	} else {
-		GX_SetPixelFmt(GX_PF_RGB8_Z24, GX_ZC_LINEAR);
-	}
+    GX_Position2s16(x2, y1);
+    GX_Color1u32(c);
+    GX_TexCoord2s16(s2, t2);
 
-	GX_SetCullMode(GX_CULL_NONE);
-	GX_CopyDisp(frameBuffer[fb],GX_TRUE);
-	GX_SetDispCopyGamma(GX_GM_1_0);
+    GX_Position2s16(x1, y1);
+    GX_Color1u32(c);
+    GX_TexCoord2s16(s1, t2);
 
-	// setup the vertex attribute table
-	// describes the data
-	// args: vat location 0-7, type of data, data format, size, scale
-	// so for ex. in the first call we are sending position data with
-	// 3 values X,Y,Z of size F32. scale sets the number of fractional
-	// bits for non float data.
-	GX_ClearVtxDesc();
-	GX_SetVtxDesc(GX_VA_POS, GX_DIRECT);
-	GX_SetVtxDesc(GX_VA_CLR0, GX_DIRECT);
-	GX_SetVtxDesc(GX_VA_TEX0, GX_DIRECT);
+    GX_End();
+}
 
-	GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
-	GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_TEX0, GX_TEX_ST, GX_F32, 0);
-	GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGB8, 0);
+static void setup_font()
+{
+    if (SYS_GetFontEncoding() == 0) {
+        fontdata = memalign(32, SYS_FONTSIZE_ANSI);
+    } else {
+        fontdata = memalign(32, SYS_FONTSIZE_SJIS);
+    }
 
-	// set number of rasterized color channels
-	GX_SetNumChans(1);
+    SYS_InitFont(fontdata);
+    activate_font_texture();
 
-	//set number of textures to generate
-	GX_SetNumTexGens(1);
+    text_size = fontdata->cell_height;
+}
 
-	// setup texture coordinate generation
-	// args: texcoord slot 0-7, matrix type, source to generate texture coordinates from, matrix to use
-	GX_SetTexCoordGen(GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY);
+static void setup_gx()
+{
+    GXColor backgroundColor = {0, 0, 0, 255};
+    void *fifoBuffer = NULL;
+    Mtx mv;
 
-	GX_InvVtxCache();
-	GX_InvalidateTexAll();
+    fifoBuffer = MEM_K0_TO_K1(memalign(32,FIFO_SIZE));
+    memset(fifoBuffer, 0, FIFO_SIZE);
 
-	TPL_OpenTPLFromMemory(&neheTPL, (void *)NeHe_tpl,NeHe_tpl_size);
-	TPL_GetTexture(&neheTPL,nehe,&texture);
-	// setup our camera at the origin
-	// looking down the -z axis with y up
-	guLookAt(view, &cam, &up, &look);
+    GX_Init(fifoBuffer, FIFO_SIZE);
 
-	// setup our projection matrix
-	// this creates a perspective matrix with a view angle of 90,
-	// and aspect ratio based on the display resolution
-	f32 w = rmode->viWidth;
-	f32 h = rmode->viHeight;
-	guPerspective(perspective, 45, (f32)w/h, 0.1F, 300.0F);
-	GX_LoadProjectionMtx(perspective, GX_PERSPECTIVE);
+    GX_ClearVtxDesc();
+    GX_SetVtxDesc(GX_VA_POS, GX_DIRECT);
+    GX_SetVtxDesc(GX_VA_CLR0, GX_DIRECT);
+    GX_SetVtxDesc(GX_VA_TEX0, GX_DIRECT);
+    GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XY, GX_S16, 0);
+    GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
+    GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_TEX0, GX_TEX_ST, GX_S16, 0);
 
-	guVector cubeAxis = {1,1,1};
+    /* This is needed so that we can specify the texture coordinates using
+     * integers, where one unit in coordinate space is equivalent to a texel.
+     */
+    GX_SetTexCoordScaleManually(GX_TEXCOORD0, GX_TRUE, 1, 1);
 
-	while(1) {
+    GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
 
-		WPAD_ScanPads();
-		if ( WPAD_ButtonsDown(0) & WPAD_BUTTON_HOME) exit(0);
+    GX_SetPixelFmt(GX_PF_RGB8_Z24, GX_ZC_LINEAR);
+    GX_SetCopyClear(backgroundColor, GX_MAX_Z24);
 
-		GX_SetTevOp(GX_TEVSTAGE0,GX_REPLACE);
-		GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
+    GX_SetNumChans(1);
+    GX_SetChanCtrl(GX_COLOR0A0, GX_DISABLE, GX_SRC_VTX, GX_SRC_VTX, 0,
+                   GX_DF_NONE, GX_AF_NONE);
+    GX_SetNumTexGens(1);
+    GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
+    GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
 
-		GX_LoadTexObj(&texture, GX_TEXMAP0);
+    guMtxIdentity(mv);
+    guMtxTransApply(mv, mv, 0.4, 0.4, 0);
+    GX_LoadPosMtxImm(mv, GX_PNMTX0);
+}
 
-		guMtxIdentity(model);
-		guMtxRotAxisDeg(model, &cubeAxis, rquad);
-		guMtxTransApply(model, model, 1.5f,0.0f,-7.0f);
-		guMtxConcat(view,model,modelview);
-		// load the modelview matrix into matrix memory
-		GX_LoadPosMtxImm(modelview, GX_PNMTX0);
+static void setup_viewport()
+{
+    Mtx44 proj;
+    u32 w, h;
 
-		GX_Begin(GX_QUADS, GX_VTXFMT0, 24);			// Draw a Cube
+    w = vmode->fbWidth;
+    h = vmode->efbHeight;
 
-			GX_Position3f32(-1.0f, 1.0f, -1.0f);	// Top Left of the quad (top)
-			GX_Color3f32(0.0f,1.0f,0.0f);			// Set The Color To Green
-			GX_TexCoord2f32(0.0f,0.0f);
-			GX_Position3f32(-1.0f, 1.0f, 1.0f);	// Top Right of the quad (top)
-			GX_Color3f32(0.0f,1.0f,0.0f);			// Set The Color To Green
-			GX_TexCoord2f32(1.0f,0.0f);
-			GX_Position3f32(-1.0f, -1.0f, 1.0f);	// Bottom Right of the quad (top)
-			GX_Color3f32(0.0f,1.0f,0.0f);			// Set The Color To Green
-			GX_TexCoord2f32(1.0f,1.0f);
-			GX_Position3f32(- 1.0f, -1.0f, -1.0f);		// Bottom Left of the quad (top)
-			GX_Color3f32(0.0f,1.0f,0.0f);			// Set The Color To Green
-			GX_TexCoord2f32(0.0f,1.0f);
+    // matrix, t, b, l, r, n, f
+    guOrtho(proj, 0, h, 0, w, 0, 1);
+    GX_LoadProjectionMtx(proj, GX_ORTHOGRAPHIC);
 
-			GX_Position3f32( 1.0f,1.0f, -1.0f);	// Top Left of the quad (bottom)
-			GX_Color3f32(1.0f,0.5f,0.0f);			// Set The Color To Orange
-			GX_TexCoord2f32(0.0f,0.0f);
-			GX_Position3f32(1.0f,-1.0f, -1.0f);	// Top Right of the quad (bottom)
-			GX_Color3f32(1.0f,0.5f,0.0f);			// Set The Color To Orange
-			GX_TexCoord2f32(1.0f,0.0f);
-			GX_Position3f32(1.0f,-1.0f,1.0f);	// Bottom Right of the quad (bottom)
-			GX_Color3f32(1.0f,0.5f,0.0f);			// Set The Color To Orange
-			GX_TexCoord2f32(1.0f,1.0f);
-			GX_Position3f32( 1.0f,1.0f,1.0f);	// Bottom Left of the quad (bottom)
-			GX_Color3f32(1.0f,0.5f,0.0f);			// Set The Color To Orange
-			GX_TexCoord2f32(0.0f,1.0f);
+    GX_SetViewport(0, 0, w, h, 0, 1);
 
-			GX_Position3f32( -1.0f, -1.0f, 1.0f);		// Top Right Of The Quad (Front)
-			GX_Color3f32(1.0f,0.0f,0.0f);			// Set The Color To Red
-			GX_TexCoord2f32(0.0f,0.0f);
-			GX_Position3f32(1.0f, -1.0f, 1.0f);	// Top Left Of The Quad (Front)
-			GX_Color3f32(1.0f,0.0f,0.0f);			// Set The Color To Red
-			GX_TexCoord2f32(1.0f,0.0f);
-			GX_Position3f32(1.0f,-1.0f, -1.0f);	// Bottom Left Of The Quad (Front)
-			GX_Color3f32(1.0f,0.0f,0.0f);			// Set The Color To Red
-			GX_TexCoord2f32(1.0f,1.0f);
-			GX_Position3f32( -1.0f,-1.0f, -1.0f);	// Bottom Right Of The Quad (Front)
-			GX_Color3f32(1.0f,0.0f,0.0f);			// Set The Color To Red
-			GX_TexCoord2f32(0.0f,1.0f);
+    f32 yscale = GX_GetYScaleFactor(h, vmode->xfbHeight);
+    GX_SetDispCopyYScale(yscale);
+    GX_SetScissor(0, 0, w, h);
+    GX_SetDispCopySrc(0, 0, w, h);
+    GX_SetDispCopyDst(w, vmode->xfbHeight);
+    GX_SetCopyFilter(vmode->aa, vmode->sample_pattern, GX_TRUE, vmode->vfilter);
+}
 
-			GX_Position3f32( -1.0f,1.0f,1.0f);	// Bottom Left Of The Quad (Back)
-			GX_Color3f32(1.0f,1.0f,0.0f);			// Set The Color To Yellow
-			GX_TexCoord2f32(0.0f,0.0f);
-			GX_Position3f32(-1.0f,1.0f,-1.0f);	// Bottom Right Of The Quad (Back)
-			GX_Color3f32(1.0f,1.0f,0.0f);			// Set The Color To Yellow
-			GX_TexCoord2f32(1.0f,0.0f);
-			GX_Position3f32(1.0f, 1.0f,-1.0f);	// Top Right Of The Quad (Back)
-			GX_Color3f32(1.0f,1.0f,0.0f);			// Set The Color To Yellow
-			GX_TexCoord2f32(1.0f,1.0f);
-			GX_Position3f32( 1.0f, 1.0f,1.0f);	// Top Left Of The Quad (Back)
-			GX_Color3f32(1.0f,1.0f,0.0f);			// Set The Color To Yellow
-			GX_TexCoord2f32(0.0f,1.0f);
+static int process_string(const char *text, bool should_draw)
+{
+    void *image;
+    int32_t xpos, ypos, width, x;
 
-			GX_Position3f32(1.0f, -1.0f, -1.0f);	// Top Right Of The Quad (Left)
-			GX_Color3f32(0.0f,0.0f,1.0f);			// Set The Color To Blue
-			GX_TexCoord2f32(0.0f,0.0f);
-			GX_Position3f32(1.0f, 1.0f,-1.0f);	// Top Left Of The Quad (Left)
-			GX_Color3f32(0.0f,0.0f,1.0f);			// Set The Color To Blue
-			GX_TexCoord2f32(1.0f,0.0f);
-			GX_Position3f32(-1.0f,1.0f,-1.0f);	// Bottom Left Of The Quad (Left)
-			GX_Color3f32(0.0f,0.0f,1.0f);			// Set The Color To Blue
-			GX_TexCoord2f32(1.0f,1.0f);
-			GX_Position3f32(-1.0f,-1.0f, -1.0f);	// Bottom Right Of The Quad (Left)
-			GX_Color3f32(0.0f,0.0f,1.0f);			// Set The Color To Blue
-			GX_TexCoord2f32(0.0f,1.0f);
+    x = text_x;
+    for (; *text != '\0'; text++) {
+        char c = *text;
+        if (c < fontdata->first_char) {
+            continue;
+        }
+        SYS_GetFontTexture(c, &image, &xpos, &ypos, &width);
+        if (should_draw) {
+            draw_font_cell(x, text_y, text_color, xpos, ypos);
+        }
+        x += width * text_size / fontdata->cell_height;
+    }
 
-			GX_Position3f32( 1.0f, -1.0f,1.0f);	// Top Right Of The Quad (Right)
-			GX_Color3f32(1.0f,0.0f,1.0f);			// Set The Color To Violet
-			GX_TexCoord2f32(0.0f,0.0f);
-			GX_Position3f32( -1.0f, -1.0f, 1.0f);		// Top Left Of The Quad (Right)
-			GX_Color3f32(1.0f,0.0f,1.0f);			// Set The Color To Violet
-			GX_TexCoord2f32(1.0f,0.0f);
-			GX_Position3f32( -1.0f,1.0f, 1.0f);	// Bottom Left Of The Quad (Right)
-			GX_Color3f32(1.0f,0.0f,1.0f);			// Set The Color To Violet
-			GX_TexCoord2f32(1.0f,1.0f);
-			GX_Position3f32( 1.0f,1.0f,1.0f);	// Bottom Right Of The Quad (Right)
-			GX_Color3f32(1.0f,0.0f,1.0f);			// Set The Color To Violet
-			GX_TexCoord2f32(0.0f,1.0f);
+    return x - text_x;
+}
 
-		GX_End();									// Done Drawing The Quad
+static int draw_string(const char *text)
+{
+    return process_string(text, true);
+}
 
-		GX_SetZMode(GX_TRUE, GX_LEQUAL, GX_TRUE);
-		GX_SetColorUpdate(GX_TRUE);
-		GX_CopyDisp(frameBuffer[fb],GX_TRUE);
+static int string_width(const char *text)
+{
+    return process_string(text, false);
+}
 
-		GX_DrawDone();
+static void draw_text()
+{
+    int w, h, x, y;
 
-		VIDEO_SetNextFramebuffer(frameBuffer[fb]);
-		if(first_frame) {
-			first_frame = 0;
-			VIDEO_SetBlack(false);
-		}
-		VIDEO_Flush();
-		VIDEO_WaitVSync();
-		fb ^= 1;
+    w = vmode->fbWidth;
+    h = vmode->efbHeight;
 
-		rquad -= 0.15f;				// Decrease The Rotation Variable For The Quad     ( NEW )
-	}
+    y = h / 2 - 100;
+
+    set_text_size(fontdata->cell_height);
+    x = (w - string_width("COLOR")) / 2;
+    set_text_pos(x, y);
+    set_text_color(0x0000ffff);
+    x += draw_string("C");
+    set_text_pos(x, y);
+    set_text_color(0x00c0c0ff);
+    x += draw_string("O");
+    set_text_pos(x, y);
+    set_text_color(0x00ff00ff);
+    x += draw_string("L");
+    set_text_pos(x, y);
+    set_text_color(0xc0c000ff);
+    x += draw_string("O");
+    set_text_pos(x, y);
+    set_text_color(0xff0000ff);
+    x += draw_string("R");
+
+    set_text_size(16);
+    y += 100;
+    x = 0;
+    set_text_color(0x00ff00ff);
+    set_text_pos(x, y);
+    draw_string("Left aligned");
+
+    set_text_color(0xff0000ff);
+    x = w - string_width("Right aligned");
+    set_text_pos(x, y);
+    draw_string("Right aligned");
+
+    x = (w - string_width("Centered")) / 2;
+    set_text_pos(x, y);
+    set_text_color(0xffffffff);
+    draw_string("Centered");
+
+    set_text_size(10);
+    y += 100;
+    x = (w - string_width("Tiny text")) / 2;
+    set_text_color(0xffffffff);
+    set_text_pos(x, y);
+    draw_string("Tiny text");
+}
+
+int main(int argc, char **argv)
+{
+    VIDEO_Init();
+    WPAD_Init();
+
+    vmode = VIDEO_GetPreferredMode(NULL);
+    xfb = MEM_K0_TO_K1(SYS_AllocateFramebuffer(vmode));
+    VIDEO_Configure(vmode);
+    VIDEO_SetNextFramebuffer(xfb);
+    VIDEO_SetBlack(false);
+    VIDEO_Flush();
+
+    // Wait for Video setup to complete
+    VIDEO_WaitVSync();
+    if (vmode->viTVMode & VI_NON_INTERLACE) VIDEO_WaitVSync();
+
+    setup_gx();
+    setup_font();
+    setup_viewport();
+
+    while (true) {
+        WPAD_ScanPads();
+
+        u32 pressed = WPAD_ButtonsDown(0);
+        if (pressed & WPAD_BUTTON_HOME) exit(0);
+
+        draw_text();
+
+        GX_DrawDone();
+        GX_CopyDisp(xfb, GX_TRUE);
+        GX_Flush();
+
+        VIDEO_WaitVSync();
+    }
+
+    return 0;
 }
